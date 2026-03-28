@@ -2,7 +2,7 @@ import os, hashlib, re, time, zipfile, io, requests
 from playwright.sync_api import sync_playwright
 from datetime import datetime
 
-# 🎯 2026 TARGET ARCHIVE
+# 🎯 2026 TARGETS
 SOURCES = {
     "Yuri_Root": "https://t.me/s/yuriiroot",
     "Yuri_Archives": "https://t.me/s/yurikeybox",
@@ -20,37 +20,37 @@ def get_hash(content):
 
 def extract_xml_from_zip(zip_url, page_text):
     """
-    Specifically targets 'YurikeyXX.zip' and scrapes the password 
-    from the text context provided by the Telegram preview.
+    Specifically tuned for Yuri's '🛡Password: Yurikey_v45' format.
+    Downloads the ZIP and extracts the clean XML.
     """
     try:
-        # 1. Build a list of potential passwords
-        # We look for a 4-12 character word following 'pass', 'pw', or 'code'
-        passwords = [None, "yuri", "pif", "integrity", "1234"]
+        # 1. Targeted Password Scraping
+        passwords = [None, "yuri", "pif"]
         
-        # Regex to find the password in the Telegram message block
-        # Yuri often writes: "Pass: yuri" or "password is: 1234"
-        match = re.search(r"(?:pass|pw|password|code)\s*[:=-]*\s*([A-Za-z0-9@#$]{3,15})", page_text, re.I)
+        # Regex tuned for Yuri's specific emoji and password string
+        # Looks for the word immediately following '🛡Password:' or 'Password:'
+        match = re.search(r"(?:🛡Password|Password|Pass|PW)\s*[:=-]*\s*([A-Za-z0-9_]{3,25})", page_text, re.I)
         if match:
-            passwords.insert(0, match.group(1).strip())
+            pwd_found = match.group(1).strip()
+            passwords.insert(0, pwd_found)
+            print(f"🔑 Scraped Yuri Password: {pwd_found}")
 
         print(f"📦 Downloading Yuri ZIP: {zip_url}")
         r = requests.get(zip_url, timeout=30, headers={"User-Agent": "Mozilla/5.0"})
         if r.status_code != 200: return None, None
 
-        # 2. Attempt Extraction
+        # 2. Extract only the XML from the encrypted ZIP
         for pwd in passwords:
             try:
                 with zipfile.ZipFile(io.BytesIO(r.content)) as z:
                     for name in z.namelist():
                         if name.lower().endswith('.xml'):
-                            # Extracting the XML data using the identified password
                             data = z.read(name, pwd=pwd.encode() if pwd else None)
                             return data.decode('utf-8', errors='ignore'), pwd
             except (zipfile.BadZipFile, RuntimeError):
-                continue # Try next password
+                continue 
     except Exception as e:
-        print(f"❌ Extraction Error: {e}")
+        print(f"❌ ZIP Extraction Error: {e}")
     return None, None
 
 def run_hunt():
@@ -66,7 +66,7 @@ def run_hunt():
             try:
                 print(f"📡 Z E U S B O T probing: {name}")
                 page.goto(url, wait_until="networkidle", timeout=60000)
-                time.sleep(8) 
+                time.sleep(10) 
 
                 # Strip Telegram login popups
                 page.evaluate("document.querySelectorAll('.login_modal, #telegram-login, .overlay').forEach(el => el.remove())")
@@ -74,8 +74,7 @@ def run_hunt():
                 html_content = page.content()
                 body_text = page.inner_text("body")
 
-                # --- Search for Yuri's ZIP links ---
-                # Specifically looks for links containing 'Yurikey' or '.zip'
+                # --- Yuri's ZIP links ---
                 zip_links = page.query_selector_all("a[href*='.zip']")
                 for link in zip_links:
                     dl_url = link.get_attribute("href")
@@ -84,9 +83,9 @@ def run_hunt():
                     
                     xml_data, used_pwd = extract_xml_from_zip(dl_url, body_text)
                     if xml_data:
-                        check_and_sync(xml_data, f"{name}_EXTRACTED", current_files, f"🔑 Pass: {used_pwd}")
+                        check_and_sync(xml_data, f"{name}_EXTRACTED", current_files, f"🔑 ZIP Pass: {used_pwd}")
 
-                # --- Fallback for Raw XML (Yigit) ---
+                # --- Fallback for Raw XML ---
                 xml_match = re.search(r'(<\?xml|<AndroidAttestation).*?(</AndroidAttestation>)', html_content, re.S | re.I)
                 if xml_match:
                     check_and_sync(xml_match.group(0).strip(), name, current_files)
@@ -99,18 +98,18 @@ def check_and_sync(payload, source_name, current_files, extra=""):
     h = get_hash(payload)
     fname = f"key_{h[:12]}.xml"
     
-    # Check if the file already exists in your GitHub folder
+    # Check if the file already exists in the folder
     if fname in current_files:
-        print(f"⏭️ {fname} is already in the repository.")
+        print(f"⏭️ {fname} already synced.")
         return
 
     fpath = os.path.join(SAVE_DIR, fname)
     with open(fpath, "w", encoding='utf-8') as f:
         f.write(payload)
     
-    # Immediate Telegram alert for Z E U S
+    # Notify Z E U S via Telegram
     if TG_TOKEN and TG_CHAT_ID:
-        caption = f"🛡️ Z E U S B O T : NEW XML EXTRACTED\n👤 Source: {source_name}\n🆔 ID: {h[:12]}\n{extra}"
+        caption = f"🛡️ Z E U S B O T : NEW KEY EXTRACTED\n👤 Source: {source_name}\n🆔 ID: {h[:12]}\n{extra}"
         with open(fpath, 'rb') as doc:
             requests.post(f"https://api.telegram.org/bot{TG_TOKEN}/sendDocument", 
                           data={'chat_id': TG_CHAT_ID, 'caption': caption}, files={'document': doc})
