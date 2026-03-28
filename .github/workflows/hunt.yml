@@ -1,8 +1,8 @@
-name: Z E U S B O T Omni-Hunter
+name: Z E U S B O T Stealth Hunter
 
 on:
   schedule:
-    - cron: '30 * * * *'
+    - cron: '0 * * * *'
   workflow_dispatch:
 
 jobs:
@@ -10,37 +10,27 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
-      
     steps:
-      - name: Checkout Repository
-        uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v4
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v4
         with:
           python-version: '3.10'
-
+      
       - name: Install Dependencies
-        run: pip install requests
+        run: |
+          pip install playwright requests
+          playwright install chromium --with-deps
 
-      - name: Execute Omni-Hunt
+      - name: Run Stealth Hunt
         env:
           TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: python hunt_keybox.py
 
-      - name: Git Push Archive
+      - name: Push Archive
         run: |
           git config --global user.name "Z E U S B O T"
           git config --global user.email "zeusbot@atomicmail.io"
-          
-          # Force add the directory (the .gitkeep ensures it exists)
           git add keyboxes/
-          
-          # Commit only if there are actual changes (new XMLs or .gitkeep)
-          if ! git diff --cached --quiet; then
-            git commit -m "bot: omni-archived keybox data [skip ci]"
-            git push
-          else
-            echo "Working tree clean. No new keys found."
-          fi
+          git commit -m "bot: stealth-archived keybox [skip ci]" || exit 0
+          git push
