@@ -17,15 +17,31 @@ TG_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 SAVE_DIR = "keyboxes"
 
 def clean_xml_content(content):
-    """Strips any text before the actual XML start tag to prevent parser errors."""
-    # Find the start of the XML tag (<?xml or <whitebox)
-    match = re.search(r'(<[\?]?xml|<whitebox)', content, re.IGNORECASE)
-    if match:
-        return content[match.start():].strip()
-    return content.strip()
+    """
+    Forcefully cleans the content to ensure it starts with '<'
+    and removes any hidden binary/BOM characters.
+    """
+    try:
+        # 1. Ensure content is a string and strip whitespace
+        content = str(content).strip()
+        
+        # 2. Find the index of the first '<'
+        start_index = content.find('<')
+        
+        if start_index != -1:
+            # 3. Slice from the first '<' to the end
+            cleaned = content[start_index:]
+            
+            # 4. Final check: Does it actually look like XML?
+            if cleaned.startswith('<'):
+                return cleaned
+        return content
+    except Exception as e:
+        print(f"Sanitization Error: {e}")
+        return content
 
 def get_hash(content):
-    return hashlib.sha256(content.encode()).hexdigest()
+    return hashlib.sha256(content.encode('utf-8')).hexdigest()
 
 def is_duplicate(new_hash):
     if not os.path.exists(SAVE_DIR):
@@ -34,13 +50,13 @@ def is_duplicate(new_hash):
     for filename in os.listdir(SAVE_DIR):
         file_path = os.path.join(SAVE_DIR, filename)
         if os.path.isfile(file_path):
-            with open(file_path, "r") as f:
+            with open(file_path, "r", encoding='utf-8') as f:
                 if get_hash(f.read()) == new_hash:
                     return True
     return False
 
 def send_and_save(content, source, is_strong):
-    # SANITIZE CONTENT BEFORE SAVING
+    # RUN AGGRESSIVE CLEANING
     clean_content = clean_xml_content(content)
     
     if not os.path.exists(SAVE_DIR):
@@ -50,16 +66,17 @@ def send_and_save(content, source, is_strong):
     filename = f"keybox_{source}_{timestamp}.xml"
     filepath = os.path.join(SAVE_DIR, filename)
 
-    with open(filepath, "w") as f:
+    # Save with explicit UTF-8 encoding (no BOM)
+    with open(filepath, "w", encoding='utf-8') as f:
         f.write(clean_content)
     
     status = "🟢 STRONG" if is_strong else "🟡 DEVICE"
     caption = (
         f"🚀 {status} KEYBOX ARCHIVED\n"
         f"👤 Source: {source}\n"
-        f"📁 Saved as: {filename}\n"
+        f"📁 File: {filename}\n"
         f"🤖 Identity: Z E U S B O T\n"
-        f"✨ Auto-Cleaned: YES"
+        f"✨ Fix: Binary/BOM Stripped"
     )
     
     url_doc = f"https://api.telegram.org/bot{TG_TOKEN}/sendDocument"
@@ -77,16 +94,21 @@ def run_hunt():
     for name, url in SOURCES.items():
         try:
             res = requests.get(url, timeout=15)
-            if res.status_code == 200 and len(res.text) > 50:
-                content = res.text
-                # Hash the CLEANED version to ensure uniqueness of the actual XML
+            if res.status_code == 200:
+                # Force decode to handle potential encoding issues from the web
+                content = res.content.decode('utf-8', errors='ignore')
+                
+                # Check cleaned version for duplication
                 cleaned = clean_xml_content(content)
+                if len(cleaned) < 50: continue # Skip if empty/invalid
+                
                 new_hash = get_hash(cleaned)
                 
                 if not is_duplicate(new_hash):
                     send_and_save(content, name, is_strong)
                     return True 
-        except:
+        except Exception as e:
+            print(f"Error checking {name}: {e}")
             continue
     return False
 
