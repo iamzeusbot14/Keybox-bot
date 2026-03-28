@@ -1,7 +1,6 @@
 import os
 import requests
 import hashlib
-import re
 
 # Targets
 SOURCES = {
@@ -9,7 +8,6 @@ SOURCES = {
     "tryigit": "https://raw.githubusercontent.com/tryigit/PlayIntegrityFix/main/keybox.xml",
     "MeowDump": "https://raw.githubusercontent.com/MeowDump/Integrity-Box/main/keybox.xml"
 }
-MEOW_README = "https://raw.githubusercontent.com/MeowDump/Integrity-Box/main/README.md"
 
 TG_TOKEN = os.getenv("TELEGRAM_TOKEN")
 TG_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
@@ -18,49 +16,43 @@ HASH_FILE = "last_keybox_hash.txt"
 def get_hash(content):
     return hashlib.sha256(content.encode()).hexdigest()
 
-def send_to_tg(content, source, is_strong):
+def send_to_tg(content, source):
+    # 1. Save files locally to send
     with open("keybox.xml", "w") as f:
         f.write(content)
     
-    status_icon = "🟢 STRONG" if is_strong else "🟡 DEVICE"
-    caption = f"🚀 {status_icon} KEYBOX FOUND\n👤 Source: {source}\n⚡ Status: Verified"
+    # 2. Send the Notification & XML
+    url_doc = f"https://api.telegram.org/bot{TG_TOKEN}/sendDocument"
+    caption = f"⚡ NEW KEYBOX DETECTED\n👤 Source: {source}\n🛠 Status: Ready for Violet/Poco"
     
-    url = f"https://api.telegram.org/bot{TG_TOKEN}/sendDocument"
-    with open("keybox.xml", "rb") as doc:
-        requests.post(url, data={'chat_id': TG_CHAT_ID, 'caption': caption}, files={'document': doc})
+    with open("keybox.xml", "rb") as xml_file:
+        requests.post(url_doc, data={'chat_id': TG_CHAT_ID, 'caption': caption}, files={'document': xml_file})
+
+    # 3. Send the YAML file (The current bot config)
+    yaml_path = ".github/workflows/hunt.yml"
+    if os.path.exists(yaml_path):
+        with open(yaml_path, "rb") as yml_file:
+            requests.post(url_doc, data={'chat_id': TG_CHAT_ID, 'caption': "📄 Current Bot Config (YML)"}, files={'document': yml_file})
 
 def run_hunt():
-    # 1. Check MeowDump README for global "Strong" status
-    meow_readme = requests.get(MEOW_README).text
-    global_strong = "🟢🟢🟢" in meow_readme
+    if not os.path.exists(HASH_FILE):
+        with open(HASH_FILE, "w") as f: f.write("")
 
-    # 2. Load the last hash we sent to avoid duplicates
-    last_hash = ""
-    if os.path.exists(HASH_FILE):
-        with open(HASH_FILE, "r") as f:
-            last_hash = f.read().strip()
+    with open(HASH_FILE, "r") as f:
+        last_hash = f.read().strip()
 
     for name, url in SOURCES.items():
         try:
             res = requests.get(url, timeout=10)
             if res.status_code == 200:
-                content = res.text
-                current_hash = get_hash(content)
-
+                current_hash = get_hash(res.text)
                 if current_hash != last_hash:
-                    print(f"New keybox detected from {name}!")
-                    # Check CRL briefly (optional but recommended)
-                    send_to_tg(content, name, global_strong)
-                    
-                    # Update the local hash so we don't send this again
+                    send_to_tg(res.text, name)
                     with open(HASH_FILE, "w") as f:
                         f.write(current_hash)
-                    return True 
-        except Exception as e:
-            print(f"Error checking {name}: {e}")
-            
+                    return True
+        except: pass
     return False
 
 if __name__ == "__main__":
     run_hunt()
-  
