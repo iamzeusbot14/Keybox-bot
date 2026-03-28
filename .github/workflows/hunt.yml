@@ -10,22 +10,42 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+      
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v4
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
         with:
           python-version: '3.10'
-      - run: pip install requests
+
+      - name: Install Dependencies
+        run: pip install requests
+
       - name: Execute Omni-Hunt
         env:
           TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: python hunt_keybox.py
+
       - name: Git Push Archive
         run: |
+          # 1. Setup Bot Identity
           git config --global user.name "Z E U S B O T"
           git config --global user.email "zeusbot@atomicmail.io"
-          git add keyboxes/
-          # Only commit if there are actual changes
-          git commit -m "bot: archived new keybox from omni-hunt [skip ci]" || exit 0
-          git push
+          
+          # 2. Only proceed if the keyboxes directory exists and isn't empty
+          if [ -d "keyboxes" ] && [ "$(ls -A keyboxes)" ]; then
+            git add keyboxes/
+            
+            # 3. Check if there are STAGED changes (new files) to commit
+            if ! git diff --cached --quiet; then
+              git commit -m "bot: archived new keybox from omni-hunt [skip ci]"
+              git push
+            else
+              echo "No new unique keyboxes to commit this run."
+            fi
+          else
+            echo "Keyboxes directory is empty or doesn't exist. Skipping commit."
+          fi
