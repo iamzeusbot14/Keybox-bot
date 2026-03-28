@@ -12,11 +12,13 @@ jobs:
       contents: write
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v4
         with:
           python-version: '3.10'
       
-      - name: Install Dependencies
+      - name: Install Playwright & Deps
         run: |
           pip install playwright requests
           playwright install chromium --with-deps
@@ -27,10 +29,19 @@ jobs:
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: python hunt_keybox.py
 
-      - name: Push Archive
+      - name: Git Push Archive
         run: |
           git config --global user.name "Z E U S B O T"
           git config --global user.email "zeusbot@atomicmail.io"
-          git add keyboxes/
-          git commit -m "bot: stealth-archived keybox [skip ci]" || exit 0
-          git push
+          
+          # Only run if folder exists
+          if [ -d "keyboxes" ]; then
+            git add keyboxes/
+            # If there are changes, commit them
+            if ! git diff --cached --quiet; then
+              git commit -m "bot: stealth-archived keybox [skip ci]"
+              git push
+            else
+              echo "Nothing new to archive."
+            fi
+          fi
