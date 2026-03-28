@@ -14,45 +14,44 @@ TG_TOKEN = os.getenv("TELEGRAM_TOKEN")
 TG_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 SAVE_DIR = "keyboxes"
 
-def get_hash(text):
-    return hashlib.sha256(text.encode()).hexdigest()
+def get_hash(content):
+    """Creates a unique ID based on the XML data itself."""
+    if isinstance(content, str):
+        content = content.encode('utf-8')
+    return hashlib.sha256(content).hexdigest()
 
 def extract_xml_from_zip(zip_url, text_context):
     """Downloads ZIP and attempts to unlock using discovered or common passwords."""
     try:
-        # 1. Password List: Common fallbacks + Scraped password
         passwords = [None, "yuri", "pif", "123", "yigit", "integrity", "1234"]
-        
-        # 2. Regex to find password in the message text (e.g., 'Pass: 1234')
+        # Look for password patterns in Yuri's captions
         found_pwd = re.search(r"(?:Pass|Password|PW|pass is):\s*([A-Za-z0-9@#$]+)", text_context, re.I)
         if found_pwd:
             passwords.insert(0, found_pwd.group(1).strip())
 
-        response = requests.get(zip_url, timeout=20)
-        if response.status_code != 200: return None, None
+        r = requests.get(zip_url, timeout=20)
+        if r.status_code != 200: return None, None
 
-        # 3. Attempt to unzip with each password
         for pwd in passwords:
             try:
-                with zipfile.ZipFile(io.BytesIO(response.content)) as z:
+                with zipfile.ZipFile(io.BytesIO(r.content)) as z:
                     for name in z.namelist():
                         if name.lower().endswith('.xml'):
                             data = z.read(name, pwd=pwd.encode() if pwd else None)
                             return data.decode('utf-8', errors='ignore'), pwd
-            except:
-                continue 
-    except Exception as e:
-        print(f"❌ ZIP Error: {e}")
+            except: continue 
+    except: pass
     return None, None
 
 def run_hunt():
-    if not os.path.exists(SAVE_DIR): os.makedirs(SAVE_DIR)
-    # Ensure folder visibility for Git
-    with open(os.path.join(SAVE_DIR, ".gitkeep"), "w") as f: f.write("Z E U S")
+    if not os.path.exists(SAVE_DIR):
+        os.makedirs(SAVE_DIR)
+    
+    # Identify what we currently have in the repo
+    current_files = os.listdir(SAVE_DIR)
 
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=True)
-        # Mimic a real Linux developer browser
         context = browser.new_context(user_agent="Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36")
         page = context.new_page()
         
@@ -60,50 +59,49 @@ def run_hunt():
             try:
                 print(f"📡 Z E U S B O T probing: {name}")
                 page.goto(url, wait_until="networkidle", timeout=60000)
-                time.sleep(5) # Wait for Cloudflare/JS
+                time.sleep(5) 
                 
                 body_text = page.inner_text("body")
                 html_content = page.content()
 
-                # --- VECTOR 1: ZIP EXTRACTION (Yuri/Telegram) ---
-                zip_links = page.query_selector_all("a[href*='.zip']")
-                found_new = False
-                for link in zip_links:
-                    dl_url = link.get_attribute("href")
-                    if dl_url and not dl_url.startswith("http"):
-                        dl_url = "https://t.me" + dl_url
-                    
+                # --- ZIP Extraction ---
+                zip_link = page.query_selector("a[href*='.zip']")
+                if zip_link:
+                    dl_url = zip_link.get_attribute("href")
+                    if dl_url and not dl_url.startswith("http"): dl_url = "https://t.me" + dl_url
                     xml_data, used_pwd = extract_xml_from_zip(dl_url, body_text)
                     if xml_data:
-                        save_and_notify(xml_data, f"{name}_ZIP", f"🔑 ZIP Pass: {used_pwd}")
-                        found_new = True; break
+                        check_sync_and_push(xml_data, f"{name}_ZIP", current_files, f"🔑 Pass: {used_pwd}")
 
-                if found_new: continue
-
-                # --- VECTOR 2: RAW XML HUNT (Yigit/Web/GitHub) ---
+                # --- Raw XML Extraction ---
                 xml_match = re.search(r'(<\?xml|<AndroidAttestation).*?(</AndroidAttestation>)', html_content, re.S | re.I)
                 if xml_match:
-                    save_and_notify(xml_match.group(0).strip(), name)
+                    check_sync_and_push(xml_match.group(0).strip(), name, current_files)
                 
             except Exception as e:
                 print(f"⚠️ {name} failed: {e}")
         browser.close()
 
-def save_and_notify(payload, source_name, extra=""):
+def check_sync_and_push(payload, source_name, current_files, extra=""):
     h = get_hash(payload)
-    if any(get_hash(open(os.path.join(SAVE_DIR, f), 'r').read()) == h 
-           for f in os.listdir(SAVE_DIR) if f.endswith('.xml')):
-        return # Duplicate found
-
-    fname = f"key_{source_name}_{datetime.now().strftime('%m%d_%H%M')}.xml"
-    fpath = os.path.join(SAVE_DIR, fname)
-    with open(fpath, "w") as f: f.write(payload)
+    # File is named by its first 12 characters of SHA256
+    fname = f"key_{h[:12]}.xml"
     
-    caption = f"🛡️ Z E U S B O T : NEW KEY\n👤 Source: {source_name}\n{extra}"
+    # If you deleted it, fname won't be in current_files, so it triggers a re-push
+    if fname in current_files:
+        print(f"⏭️ {fname} exists. Skipping.")
+        return
+
+    fpath = os.path.join(SAVE_DIR, fname)
+    with open(fpath, "w", encoding='utf-8') as f:
+        f.write(payload)
+    
+    # Telegram Alert
+    caption = f"🛡️ Z E U S B O T : SYNCED\n👤 Source: {source_name}\n🆔 Hash: {h[:12]}\n{extra}"
     with open(fpath, 'rb') as doc:
         requests.post(f"https://api.telegram.org/bot{TG_TOKEN}/sendDocument", 
                       data={'chat_id': TG_CHAT_ID, 'caption': caption}, files={'document': doc})
-    print(f"✅ Archived: {fname}")
+    print(f"✅ Synced/Pushed: {fname}")
 
 if __name__ == "__main__":
     run_hunt()
