@@ -2,7 +2,7 @@ name: Z E U S B O T Omni-Hunter
 
 on:
   schedule:
-    - cron: '15 * * * *' # Runs at 15 minutes past every hour
+    - cron: '30 * * * *'
   workflow_dispatch:
 
 jobs:
@@ -31,21 +31,16 @@ jobs:
 
       - name: Git Push Archive
         run: |
-          # 1. Setup Bot Identity
           git config --global user.name "Z E U S B O T"
           git config --global user.email "zeusbot@atomicmail.io"
           
-          # 2. Only proceed if the keyboxes directory exists and isn't empty
-          if [ -d "keyboxes" ] && [ "$(ls -A keyboxes)" ]; then
-            git add keyboxes/
-            
-            # 3. Check if there are STAGED changes (new files) to commit
-            if ! git diff --cached --quiet; then
-              git commit -m "bot: archived new keybox from omni-hunt [skip ci]"
-              git push
-            else
-              echo "No new unique keyboxes to commit this run."
-            fi
+          # Force add the directory (the .gitkeep ensures it exists)
+          git add keyboxes/
+          
+          # Commit only if there are actual changes (new XMLs or .gitkeep)
+          if ! git diff --cached --quiet; then
+            git commit -m "bot: omni-archived keybox data [skip ci]"
+            git push
           else
-            echo "Keyboxes directory is empty or doesn't exist. Skipping commit."
+            echo "Working tree clean. No new keys found."
           fi
