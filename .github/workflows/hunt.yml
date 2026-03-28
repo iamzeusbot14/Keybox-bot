@@ -1,9 +1,9 @@
-name: Ultimate Keybox Hunter
+name: Z E U S B O T Keybox Hunter
 
 on:
   schedule:
-    - cron: '0 * * * *' # Every hour on the dot
-  workflow_dispatch:
+    - cron: '0 * * * *' # Hourly check
+  workflow_dispatch: # Manual trigger
 
 jobs:
   hunt:
@@ -22,17 +22,17 @@ jobs:
       - name: Install dependencies
         run: pip install requests
 
-      - name: Run Hunter
+      - name: Run Hunter Bot
         env:
           TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: python hunt_keybox.py
 
-      - name: Save State
+      - name: Sync Hash State
         run: |
-          git config --global user.name "Z E U S"
-          git config --global user.email "iamdrzeus14@gmail.com"
+          git config --global user.name "Z E U S B O T"
+          git config --global user.email "zeusbot@atomicmail.io"
           git add last_keybox_hash.txt
-          git commit -m "bot: sync keybox hash [skip ci]" || echo "No changes"
-          git push || echo "No changes to push"
-          
+          # Commit the new hash and push back to repo
+          git commit -m "bot: sync new keybox hash [skip ci]" || exit 0
+          git push
