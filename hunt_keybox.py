@@ -1,112 +1,81 @@
 import os
 import requests
 import hashlib
+import base64
 import re
 from datetime import datetime
 
-# OFFICIAL SOURCE MAPPING
+# SOURCES: Targeting Telegram Previews to bypass Web-Bot Protection
 SOURCES = {
-    "Yuri": "https://raw.githubusercontent.com/Yurii0307/yurikey/main/key",
-    "tryigit": "https://raw.githubusercontent.com/tryigit/PlayIntegrityFix/main/keybox.xml",
-    "MeowDump": "https://raw.githubusercontent.com/MeowDump/Integrity-Box/main/keybox.xml"
+    "Yuri_TG": "https://t.me/s/yurikeybox",
+    "tryigit_TG": "https://t.me/s/tr_pif",
+    "Meow_TG": "https://t.me/s/MeowDump",
+    "Pif_Next": "https://raw.githubusercontent.com/EricInacio01/PlayIntegrityFix-NEXT/main/keybox.xml"
 }
-MEOW_README = "https://raw.githubusercontent.com/MeowDump/Integrity-Box/main/README.md"
 
 TG_TOKEN = os.getenv("TELEGRAM_TOKEN")
 TG_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 SAVE_DIR = "keyboxes"
 
-def get_clean_xml(raw_content):
-    """
-    Finds the first valid XML start tag and strips everything before it.
-    Ensures @KeyBox_Checker_by_VD_Priv8_bot never sees 'Start tag expected' error.
-    """
-    try:
-        # Look for standard keybox start tags
-        match = re.search(r'(<\?xml|<AndroidAttestation|<whitebox)', raw_content, re.IGNORECASE)
-        if match:
-            return raw_content[match.start():].strip()
-        return None
-    except:
-        return None
+def extract_keybox(html_content):
+    """Hunts for XML or Base64 blocks in HTML source."""
+    # Try finding raw XML first
+    xml_match = re.search(r'(<\?xml|<AndroidAttestation|<whitebox).*?(</AndroidAttestation>|</whitebox>)', html_content, re.DOTALL | re.IGNORECASE)
+    if xml_match:
+        return xml_match.group(0).strip()
+    
+    # Try finding Base64 blocks (common in Yuri's channel)
+    b64_blocks = re.findall(r'[A-Za-z0-9+/]{100,}=*', html_content)
+    for block in b64_blocks:
+        try:
+            decoded = base64.b64decode(block).decode('utf-8', errors='ignore')
+            if '<AndroidAttestation' in decoded or '<whitebox' in decoded:
+                start = decoded.find('<')
+                return decoded[start:].strip()
+        except:
+            continue
+    return None
 
-def get_hash(content):
-    """Generates a unique fingerprint for the XML content."""
-    return hashlib.sha256(content.encode('utf-8')).hexdigest()
+def get_hash(text):
+    return hashlib.sha256(text.encode('utf-8')).hexdigest()
 
 def is_duplicate(new_hash):
-    """Scans the entire archive folder to prevent sending the same key twice."""
-    if not os.path.exists(SAVE_DIR):
-        os.makedirs(SAVE_DIR)
-        return False
-    
-    for filename in os.listdir(SAVE_DIR):
-        file_path = os.path.join(SAVE_DIR, filename)
+    if not os.path.exists(SAVE_DIR): return False
+    for f in os.listdir(SAVE_DIR):
+        file_path = os.path.join(SAVE_DIR, f)
         if os.path.isfile(file_path):
-            with open(file_path, "r", encoding='utf-8') as f:
-                if get_hash(f.read()) == new_hash:
-                    return True
+            with open(file_path, "r", encoding="utf-8") as file:
+                if get_hash(file.read()) == new_hash: return True
     return False
-
-def send_to_tg(filepath, caption):
-    """Helper to send the document via Telegram API."""
-    url = f"https://api.telegram.org/bot{TG_TOKEN}/sendDocument"
-    with open(filepath, "rb") as doc:
-        requests.post(url, data={'chat_id': TG_CHAT_ID, 'caption': caption}, files={'document': doc})
 
 def run_hunt():
-    # Check for Strong Integrity status from MeowDump README
-    try:
-        meow_status = requests.get(MEOW_README, timeout=10).text
-        is_strong = "🟢🟢🟢" in meow_status
-    except:
-        is_strong = False
-
-    if not os.path.exists(SAVE_DIR):
-        os.makedirs(SAVE_DIR)
-
+    if not os.path.exists(SAVE_DIR): os.makedirs(SAVE_DIR)
+    headers = {'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36'}
+    
+    found_any = False
     for name, url in SOURCES.items():
         try:
-            res = requests.get(url, timeout=15)
+            res = requests.get(url, headers=headers, timeout=20)
             if res.status_code == 200:
-                # 1. Clean the raw data to get valid XML
-                clean_content = get_clean_xml(res.text)
+                clean_xml = extract_keybox(res.text)
                 
-                if clean_content and len(clean_content) > 100:
-                    new_hash = get_hash(clean_content)
+                if clean_xml and not is_duplicate(get_hash(clean_xml)):
+                    ts = datetime.now().strftime("%Y%m%d_%H%M")
+                    fname = f"keybox_{name}_{ts}.xml"
+                    fpath = os.path.join(SAVE_DIR, fname)
                     
-                    # 2. Check if we already have this specific key archived
-                    if not is_duplicate(new_hash):
-                        # 3. Create unique filename with timestamp
-                        ts = datetime.now().strftime("%Y%m%d_%H%M")
-                        filename = f"keybox_{name}_{ts}.xml"
-                        filepath = os.path.join(SAVE_DIR, filename)
-                        
-                        # 4. Save to Archive
-                        with open(filepath, "w", encoding='utf-8') as f:
-                            f.write(clean_content)
-                        
-                        # 5. Send to Telegram
-                        status = "🟢 STRONG" if is_strong else "🟡 DEVICE"
-                        caption = (
-                            f"🚀 {status} KEYBOX ARCHIVED\n"
-                            f"👤 Source: {name}\n"
-                            f"📁 File: {filename}\n"
-                            f"🤖 Identity: Z E U S B O T\n"
-                            f"✨ Sanitized: YES"
-                        )
-                        send_to_tg(filepath, caption)
-                        
-                        # Also send the YML config as requested
-                        yml_path = ".github/workflows/hunt.yml"
-                        if os.path.exists(yml_path):
-                            send_to_tg(yml_path, "📄 Current Bot Config (YML)")
-                            
-                        return True # Found a new one, exit until next hour
-        except Exception as e:
-            print(f"Error checking {name}: {e}")
-            continue
-    return False
+                    with open(fpath, "w", encoding="utf-8") as f:
+                        f.write(clean_xml)
+                    
+                    # Notify Telegram
+                    caption = f"🛡️ BYPASS SUCCESS: {name}\n📁 Saved: {fname}\n🤖 Z E U S B O T"
+                    with open(fpath, 'rb') as doc:
+                        requests.post(f"https://api.telegram.org/bot{TG_TOKEN}/sendDocument", 
+                                      data={'chat_id': TG_CHAT_ID, 'caption': caption}, 
+                                      files={'document': doc})
+                    found_any = True
+        except: continue
+    return found_any
 
 if __name__ == "__main__":
     run_hunt()
