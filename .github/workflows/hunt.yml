@@ -2,14 +2,14 @@ name: Z E U S B O T Archive Hunter
 
 on:
   schedule:
-    - cron: '0 * * * *' # Runs exactly every hour
-  workflow_dispatch: # Allows you to trigger it manually from GitHub UI
+    - cron: '0 * * * *' # Every hour on the hour
+  workflow_dispatch: # Allows manual trigger from GitHub UI
 
 jobs:
   hunt:
     runs-on: ubuntu-latest
     permissions:
-      contents: write # Essential for Z E U S B O T to push to your repo
+      contents: write # Required for the bot to push to your repo
     
     steps:
       - name: Checkout Repository
@@ -31,17 +31,17 @@ jobs:
 
       - name: Sync Archive to Git
         run: |
-          # Use your specific bot identity
+          # Z E U S B O T Identity Configuration
           git config --global user.name "Z E U S B O T"
           git config --global user.email "zeusbot@atomicmail.io"
           
-          # Ensure the directory exists to avoid errors
+          # Create directory if it doesn't exist
           mkdir -p keyboxes
           git add keyboxes/
           
-          # Only commit and push if a new file was actually added
+          # Only push if a new file was actually archived
           if git diff --staged --quiet; then
-            echo "No new unique keyboxes to save."
+            echo "No new unique keyboxes found this hour."
           else
             git commit -m "bot: archived new unique keybox [skip ci]"
             git push
