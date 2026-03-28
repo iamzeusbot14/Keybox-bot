@@ -1,25 +1,26 @@
-name: Z E U S B O T Keybox Hunter
+name: Z E U S B O T Archive Hunter
 
 on:
   schedule:
-    - cron: '0 * * * *' # Hourly check
-  workflow_dispatch: # Manual trigger
+    - cron: '0 * * * *' # Runs exactly every hour
+  workflow_dispatch: # Allows you to trigger it manually from GitHub UI
 
 jobs:
   hunt:
     runs-on: ubuntu-latest
     permissions:
-      contents: write
+      contents: write # Essential for Z E U S B O T to push to your repo
+    
     steps:
-      - name: Checkout Repo
+      - name: Checkout Repository
         uses: actions/checkout@v4
 
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
-          python-version: '3.x'
+          python-version: '3.10'
 
-      - name: Install dependencies
+      - name: Install Dependencies
         run: pip install requests
 
       - name: Run Hunter Bot
@@ -28,11 +29,20 @@ jobs:
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: python hunt_keybox.py
 
-      - name: Sync Hash State
+      - name: Sync Archive to Git
         run: |
+          # Use your specific bot identity
           git config --global user.name "Z E U S B O T"
           git config --global user.email "zeusbot@atomicmail.io"
-          git add last_keybox_hash.txt
-          # Commit the new hash and push back to repo
-          git commit -m "bot: sync new keybox hash [skip ci]" || exit 0
-          git push
+          
+          # Ensure the directory exists to avoid errors
+          mkdir -p keyboxes
+          git add keyboxes/
+          
+          # Only commit and push if a new file was actually added
+          if git diff --staged --quiet; then
+            echo "No new unique keyboxes to save."
+          else
+            git commit -m "bot: archived new unique keybox [skip ci]"
+            git push
+          fi
