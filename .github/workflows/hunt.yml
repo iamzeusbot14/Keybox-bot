@@ -1,0 +1,38 @@
+name: Ultimate Keybox Hunter
+
+on:
+  schedule:
+    - cron: '0 * * * *' # Every hour on the dot
+  workflow_dispatch:
+
+jobs:
+  hunt:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout Repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.x'
+
+      - name: Install dependencies
+        run: pip install requests
+
+      - name: Run Hunter
+        env:
+          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: python hunt_keybox.py
+
+      - name: Save State
+        run: |
+          git config --global user.name "Z E U S"
+          git config --global user.email "iamdrzeus14@gmail.com"
+          git add last_keybox_hash.txt
+          git commit -m "bot: sync keybox hash [skip ci]" || echo "No changes"
+          git push || echo "No changes to push"
+          
