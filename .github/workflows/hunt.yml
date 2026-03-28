@@ -1,8 +1,8 @@
-name: Z E U S B O T Omni-Hunter
+name: Z E U S B O T Omni-Sync
 
 on:
   schedule:
-    - cron: '0 * * * *' # Scans every hour
+    - cron: '0 * * * *' # Hourly
   workflow_dispatch:
 
 jobs:
@@ -23,24 +23,23 @@ jobs:
           pip install playwright requests
           playwright install chromium --with-deps
 
-      - name: Run Omni-Hunt
+      - name: Run Sync-Hunt
         env:
           TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: python hunt_keybox.py
 
-      - name: Git Sync
+      - name: Git Push Sync
         run: |
           git config --global user.name "Z E U S B O T"
           git config --global user.email "zeusbot@atomicmail.io"
           
-          # Force create directory if script didn't find new keys
           mkdir -p keyboxes
           git add keyboxes/
           
           if ! git diff --cached --quiet; then
-            git commit -m "bot: omni-archived keybox [skip ci]"
+            git commit -m "bot: synced repo with online keys [skip ci]"
             git push
           else
-            echo "Working tree clean. No new keys found."
+            echo "Repo already in sync with online sources."
           fi
